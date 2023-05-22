@@ -1,0 +1,226 @@
+#!/bin/bash
+##[Ficha: ]########################################
+#                                                 #
+# [-] Autor..........: Jean Zonta                 #
+# [-] Pseudonym......: wikianon                   #
+# [-] Os destination.: Linux family               #
+# [-] Script Name....: gitpratico_multiuser       #
+# [-] Script Version.: 0.0.1                      #
+# [-] License........: GNU/GPL V3+                #
+# [-] Suporte........: Multiusuário github        #
+# [-] Finalidade.....: Criar repositórios remotos #
+###################################################
+GIT="$(which git)"
+
+CURL="$(which curl)"
+
+<<COMMIT
+O script "gitpratico_multiuser" foi criado para mais de um usuário github que tem acesso 
+a mesma estação de trablho em horário diferentes possa usar o script sem 
+precisar ficar digitando a chave token toda vez que criar repositórios remotos no github,
+basta colocar a "chave token" de todos os usuários github e os usuários github de cada repositório 
+no vetor deste script, assim se tivermos três usuários github 
+que acessam a máquina em horário diferentes no mesmo usuário linux, todos eles tem que 
+estar configurados no vetor com suas respectivas chaves tokens 
+na mesma posição em que se encontra o seu usuário github no vetor 
+e o ssh configurado no github então basta 
+apenas digitar "gitpratico <username_git> <nome_projeto>" para criar os repositórios.
+COMMIT
+
+USERS_GIT=("github_usuario1" "github_usuario2" "github_usuario3")
+
+#Coloque sua chave token no vetor para verificar
+ACESS_TOKEN=("chave_token_github_usuario1" "chave_token_github_usuario2" "chave_token_github_usuario3")
+
+function help() {
+
+    echo -e "\n\e[1;34mO script \e[1;32m${0##*/}\033[1;34m deve ser executado dentro da pasta \ndo projeto somente uma única vez.\033[0m"
+
+    echo -e "\n\e[1;31mUsage\e[1;34m: \e[1;32m${0##*/} \033[1;34m-u\033[1;32m=\033[1;35m\"your_user_github\" \033[1;34m-p\033[1;32m=\033[1;35m\"project_name\" \033[1;34m-c\033[1;32m=\033[1;35m\"comentário\"\033[0m"
+
+    echo -e "\n\e[1;31mOptions\e[1;32m:\n\e[1;34m(-u | --u | --user)\033[1;32m=\033[1;35m\"your_user_github\"\033[1;34m Usuário github\n\n(-p | --p | --proj)\033[1;32m=\033[1;35m\"project_name\"\033[1;34m Nome do projeto a subir no github como repositório\n\n(-c | --c | --commit)\033[1;32m=\033[1;35m\"comment repository/project\"\033[1;34m Comentar criação repositório/projeto\033[0m\n"
+
+    exit 0
+}
+
+## Variável contadora
+count=0
+
+## Expressão regular para verificar o que foi digitado
+tmp=$(sed -r 's/( [-]+)/\n&/g;' <<<"$@" | sed 's/^[ ]\+//')
+
+while read ln; do
+  
+  if [[ "$ln" =~ (^[-]{1,2}([cpu]|(commit|proj|user))[= ]{0,2}$) ]]; then
+    
+    let count++
+
+    [[ "$ln" =~ (^[-]{1,2}([p]|proj)[= ]{0,2}$) ]] && help
+
+    [[ "$ln" =~ (^[-]{1,2}([u]|user)[= ]{0,2}$) ]] && help
+    
+    [[ "$ln" =~ (^[-]{1,2}([c]|commit)[= ]{0,2}$) ]] && help
+
+  fi
+
+done <<<"${tmp}"
+
+## Os : obriga a digitar um argumento após a opção.
+OPTS=$(getopt -a -n ${0} -o u:,p:,c:,h --long user:,proj:,commit:,help -- "$@")
+
+eval set -- "${OPTS}"
+
+while :; do
+
+    case "${1}" in
+
+    -u | --u | --user)
+
+        USER_GIT=${2}
+
+        ## Para pegar o segundo argumento.
+        shift 2
+
+        ;;
+
+    -p | --p | --proj)
+
+        PROJECT_NAME=${2}
+
+        ## Para pegar o segundo argumento.
+        shift 2
+
+        ;;
+
+    -c | --c | --commit)
+
+        COMMIT=${2}
+
+        ## Para pegar o segundo argumento.
+        shift 2
+
+        ;;
+
+    -h | --help)
+
+        ## Para não dar loop infinito.
+        shift
+        help
+        ;;
+
+    --) # Skip --
+        ## Para não dar loop infinito.
+        shift
+        break
+        ;;
+    esac
+done
+
+## Depois de testar todas as opções e elas não forem vazias
+if [[ -n "${USER_GIT}" && -n "${PROJECT_NAME}" && -n "${COMMIT}" ]]; then
+
+    for ((i = 0; i < "${#USERS_GIT[@]}"; i++)); do
+
+        if [[ "${USERS_GIT[${i}]}" == "${USER_GIT}" ]]; then
+
+            ## Pegando o host do usuário github que está executando o script.
+            HOST_GITHUB_USER=$(grep "host-${USER_GIT}" ~/.ssh/config | sed 's/Host\s//g;')
+
+            ## Criando os repositórios remotamente sem logar no github
+            ${CURL} -i -H "Authorization: token ${ACESS_TOKEN[${i}]}" -d "{\"name\":\"${PROJECT_NAME}\",\"private\":false}" https://api.github.com/user/repos
+
+            ## Se a pasta atual é a mesma a subir o repositório
+            if [[ "${PROJECT_NAME}" == "${PWD##*/}" ]]; then
+
+                ## Verifica se o arquivo README.md existe
+                README="$(ls -1 README.md 2>/dev/null)"
+
+                if [ -z "${README}" ]; then
+                    ## Cria um README caso o projeto não tenha nada na pasta ainda
+                    echo "## README ${PROJECT_NAME}" >>README.md
+                    echo "### :+1: *Repositório ${PROJECT_NAME} criado com o script ${0##*/}* :shipit:" >>README.md
+                else
+                    ## Adiciona um comentário sobre o uso do script ao subir o repositório
+                    echo "### :+1: *Repositório ${PROJECT_NAME} criado com o script ${0##*/}* :shipit:" >>README.md
+                fi
+
+                ## Se ja foi inicializado um repositório
+                if [[ -d .git/refs ]]; then
+
+                    ## Adiciona todos os arquivos existentes na pasta
+                    ${GIT} add .
+
+                    ## Comitando o projeto
+                    ${GIT} commit -m "${COMMIT}"
+
+                    ## Modifica o branch atual criado pelo commit de master para main
+                    ${GIT} branch -M main
+
+                else
+
+                    ## Inicializa o repositório
+                    ${GIT} init
+
+                    ## Adiciona todos os arquivos existentes na pasta
+                    ${GIT} add .
+
+                    ## Comitando o projeto
+                    ${GIT} commit -m "${COMMIT}"
+
+                    ## Modifica o branch atual criado pelo commit de master para main
+                    ${GIT} branch -M main
+                fi
+
+                ## Adiconando o repositório a url remota
+                ${GIT} remote add origin git@${HOST_GITHUB_USER}:${USERS_GIT[${i}]}/${PROJECT_NAME}.git
+
+                ## Setando a url ssh do repositório para fazermos:
+                ## git push git@host-GITHUB_USUARIO:GITHUB_USUARIO/${PROJECT_NAME}.git main
+                ${GIT} remote set-url origin git@${HOST_GITHUB_USER}:${USERS_GIT[${i}]}/${PROJECT_NAME}.git
+
+                echo -e "\e[1;34mDigite a senha configurada na chave ssh do github caso nescessário.\033[0m\n"
+
+                ${GIT} push -u origin main
+
+            ## Se a pasta atual não for a pasta com o mesmo nome do projeto a subir como repositório
+            ## Cria uma nova pasta e inicializa o repositório local nela.
+            elif [[ "${PROJECT_NAME}" != "${PWD##*/}" ]]; then
+
+                mkdir -p ${PROJECT_NAME}
+
+                cd ${PROJECT_NAME}
+
+                ## Inicializa o repositório
+                ${GIT} init
+
+                ## Cria um README no projeto
+                echo "## README ${PROJECT_NAME}" >>README.md
+                echo "### :+1: *Repositório ${PROJECT_NAME} criado com o script ${0##*/}* :shipit:" >>README.md
+
+                ## Adiciona todos os arquivos existentes na pasta
+                ${GIT} add .
+
+                ## Comitando o projeto
+                ${GIT} commit -m "${COMMIT}"
+
+                ## Modifica o branch atual criado pelo commit de master para main
+                ${GIT} branch -M main
+
+                ## Adiconando o repositório a url remota
+                ${GIT} remote add origin git@${HOST_GITHUB_USER}:${USERS_GIT[${i}]}/${PROJECT_NAME}.git
+
+                ## Setando a url ssh do repositório para fazermos:
+                ## git push git@host-${USER_GIT}:${USER_GIT}/${PROJECT_NAME}.git main
+                ${GIT} remote set-url origin git@${HOST_GITHUB_USER}:${USERS_GIT[${i}]}/${PROJECT_NAME}.git
+
+                echo -e "\e[1;34mDigite a senha configurada na chave ssh do github caso nescessário.\033[0m\n"
+
+                ${GIT} push -u origin main
+
+            fi #Fim PWD
+
+        fi #Fim USERS_GIT
+
+    done #Fim for
+
+fi #Fim ARGS
